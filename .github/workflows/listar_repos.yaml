@@ -6,7 +6,7 @@ on:
       repos:
         description: "Repositórios separados por vírgula (ex: repo1,repo2)"
         required: true
-        default: "repo1,repo2"
+        default: "repotest,repoorg"
 
 jobs:
   check-workflows:
