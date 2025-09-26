@@ -37,7 +37,7 @@ jobs:
           import pandas as pd
 
           ORG_NAME = "brenheorg"
-          ALLOWED_WORKFLOWS = ["principal.yaml", "test-pipeline.yaml"]
+          ALLOWED_WORKFLOWS = ["principal.yaml", "test-pipeline.yaml", "pipe.yaml"]
           BRANCHES = ["main", "develop"]
 
           token = os.getenv("ORG_TOKEN")
