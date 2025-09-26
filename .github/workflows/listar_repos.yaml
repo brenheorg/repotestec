@@ -6,7 +6,7 @@ on:
       repos:
         description: 'Lista de repositórios separados por vírgula (ex: repo1,repo2)'
         required: false
-        default: ''
+        default: 'repotest, repotestec'
 
 jobs:
   check-workflows:
@@ -54,7 +54,7 @@ jobs:
 
           if repos_to_check:
               # Verificar apenas os repositórios selecionados
-              repos = []
+              repos = [repotest, repo]
               for repo_name in repos_to_check:
                   try:
                       repo = org.get_repo(repo_name)
