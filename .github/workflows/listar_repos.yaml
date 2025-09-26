@@ -2,6 +2,11 @@ name: Check Workflows
 
 on:
   workflow_dispatch:
+    inputs:
+      repos:
+        description: 'Lista de repositórios separados por vírgula (ex: repo1,repo2)'
+        required: false
+        default: ''
 
 jobs:
   check-workflows:
@@ -34,17 +39,33 @@ jobs:
           ORG_NAME = "brenheorg"
           ALLOWED_WORKFLOWS = ["principal.yaml", "test-pipeline.yaml"]
 
+          # Recebe a lista de repositórios via variável de ambiente
+          repos_input = os.getenv("REPOS_TO_CHECK", "")
+          repos_to_check = [r.strip() for r in repos_input.split(",") if r.strip()]
+
           token = os.getenv("ORG_TOKEN")
           if not token:
               raise Exception("O token ORG_TOKEN não está definido nos secrets")
 
-          # Conectar com GitHub usando o token
           g = Github(token)
           org = g.get_organization(ORG_NAME)
 
           repos_data = []
 
-          for repo in org.get_repos():
+          if repos_to_check:
+              # Verificar apenas os repositórios selecionados
+              repos = []
+              for repo_name in repos_to_check:
+                  try:
+                      repo = org.get_repo(repo_name)
+                      repos.append(repo)
+                  except Exception:
+                      print(f"Repositório {repo_name} não encontrado ou sem acesso")
+          else:
+              # Se não passou nada, verifica todos
+              repos = org.get_repos()
+
+          for repo in repos:
               print(f"\nVerificando repositório: {repo.name}")
               repo_dict = {"Repository": repo.name}
               try:
@@ -55,19 +76,15 @@ jobs:
                   workflow_files = []
                   print("Nenhum workflow encontrado")
 
-              # Preencher colunas dos workflows permitidos
               for wf in ALLOWED_WORKFLOWS:
                   repo_dict[wf] = "existe" if wf in workflow_files else "não existe"
 
-              # Verificar workflows extras (não listados nos fixos)
               extras = [wf for wf in workflow_files if wf not in ALLOWED_WORKFLOWS]
               repo_dict["Workflows extras"] = ", ".join(extras) if extras else "nenhum"
 
               repos_data.append(repo_dict)
 
-          # Criar DataFrame e gerar CSV/XLSX
           df = pd.DataFrame(repos_data)
-          # Garantir que "Workflows extras" fique como última coluna
           cols = [c for c in df.columns if c != "Workflows extras"] + ["Workflows extras"]
           df = df[cols]
 
@@ -82,6 +99,7 @@ jobs:
       - name: Run workflow checker
         env:
           ORG_TOKEN: ${{ secrets.ORG_TOKEN }}
+          REPOS_TO_CHECK: ${{ github.event.inputs.repos }}
         run: |
           echo "Iniciando verificação de workflows..."
           python verificar_workflows.py
