@@ -1,0 +1,93 @@
+name: Check Workflows
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check-workflows:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1️⃣ Fazer checkout do repositório
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      # 2️⃣ Configurar Python
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      # 3️⃣ Instalar dependências
+      - name: Install dependencies
+        run: |
+          pip install PyGithub pandas openpyxl
+
+      # 4️⃣ Criar script Python diretamente na Action
+      - name: Create workflow checker script
+        run: |
+          cat << 'EOF' > verificar_workflows.py
+          import os
+          from github import Github
+          import pandas as pd
+
+          ORG_NAME = "brenheorg"
+          ALLOWED_WORKFLOWS = ["principal.yaml", "test-pipeline.yaml"]
+
+          token = os.getenv("ORG_TOKEN")
+          if not token:
+              raise Exception("O token ORG_TOKEN não está definido nos secrets")
+
+          # Conectar com GitHub usando o token
+          g = Github(token)
+          org = g.get_organization(ORG_NAME)
+
+          repos_data = []
+
+          for repo in org.get_repos():
+              print(f"\nVerificando repositório: {repo.name}")
+              repo_dict = {"Repository": repo.name}
+              try:
+                  contents = repo.get_contents(".github/workflows")
+                  workflow_files = [file.name for file in contents if file.name.endswith(".yaml")]
+                  print(f"Workflows encontrados: {workflow_files}")
+              except Exception:
+                  workflow_files = []
+                  print("Nenhum workflow encontrado")
+
+              # Preencher colunas dos workflows permitidos
+              for wf in ALLOWED_WORKFLOWS:
+                  repo_dict[wf] = "existe" if wf in workflow_files else "não existe"
+
+              # Verificar workflows extras
+              extras = [wf for wf in workflow_files if wf not in ALLOWED_WORKFLOWS]
+              repo_dict["Workflows extras"] = ", ".join(extras) if extras else "nenhum"
+
+              repos_data.append(repo_dict)
+
+          # Criar DataFrame e gerar CSV/XLSX
+          df = pd.DataFrame(repos_data)
+          df.to_csv("workflow_check.csv", index=False)
+          df.to_excel("workflow_check.xlsx", index=False)
+
+          print("\nRelatórios gerados: workflow_check.csv e workflow_check.xlsx")
+          print("Processo finalizado com sucesso!")
+          EOF
+
+      # 5️⃣ Rodar o script Python
+      - name: Run workflow checker
+        env:
+          ORG_TOKEN: ${{ secrets.ORG_TOKEN }}
+        run: |
+          echo "Iniciando verificação de workflows..."
+          python verificar_workflows.py
+          echo "Verificação concluída!"
+
+      # 6️⃣ Upload de artefatos (CSV e XLSX)
+      - name: Upload report artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: workflow-report
+          path: |
+            workflow_check.csv
+            workflow_check.xlsx
