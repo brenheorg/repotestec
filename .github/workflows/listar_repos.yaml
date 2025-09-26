@@ -59,12 +59,8 @@ jobs:
               for wf in ALLOWED_WORKFLOWS:
                   repo_dict[wf] = "existe" if wf in workflow_files else "não existe"
 
-              # Criar colunas para cada workflow extra
+              # Verificar workflows extras (não listados nos fixos)
               extras = [wf for wf in workflow_files if wf not in ALLOWED_WORKFLOWS]
-              for extra in extras:
-                  repo_dict[extra] = "existe"
-
-              # Última coluna com todos os extras juntos
               repo_dict["Workflows extras"] = ", ".join(extras) if extras else "nenhum"
 
               repos_data.append(repo_dict)
