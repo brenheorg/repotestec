@@ -38,6 +38,7 @@ jobs:
 
           ORG_NAME = "brenheorg"
           ALLOWED_WORKFLOWS = ["principal.yaml", "test-pipeline.yaml"]
+          BRANCHES = ["main", "develop"]
 
           token = os.getenv("ORG_TOKEN")
           if not token:
@@ -64,24 +65,25 @@ jobs:
                   print(f"Erro ao acessar repositório {repo_name}: {e}")
                   continue
 
-              repo_dict = {"Repository": repo.name}
-              try:
-                  contents = repo.get_contents(".github/workflows")
-                  workflow_files = [file.name for file in contents if file.name.endswith(".yaml")]
-                  print(f"Workflows encontrados: {workflow_files}")
-              except Exception:
-                  workflow_files = []
-                  print("Nenhum workflow encontrado")
+              for branch in BRANCHES:
+                  repo_dict = {"Repository": repo.name, "Branch": branch}
+                  try:
+                      contents = repo.get_contents(".github/workflows", ref=branch)
+                      workflow_files = [file.name for file in contents if file.name.endswith(".yaml")]
+                      print(f"Branch {branch}: Workflows encontrados: {workflow_files}")
+                  except Exception:
+                      workflow_files = []
+                      print(f"Branch {branch}: Nenhum workflow encontrado")
 
-              # Preencher colunas dos workflows permitidos
-              for wf in ALLOWED_WORKFLOWS:
-                  repo_dict[wf] = "existe" if wf in workflow_files else "não existe"
+                  # Preencher colunas dos workflows permitidos
+                  for wf in ALLOWED_WORKFLOWS:
+                      repo_dict[wf] = "existe" if wf in workflow_files else "não existe"
 
-              # Verificar workflows extras (lista apenas na última coluna)
-              extras = [wf for wf in workflow_files if wf not in ALLOWED_WORKFLOWS]
-              repo_dict["Workflows extras"] = ", ".join(extras) if extras else "nenhum"
+                  # Verificar workflows extras (lista apenas na última coluna)
+                  extras = [wf for wf in workflow_files if wf not in ALLOWED_WORKFLOWS]
+                  repo_dict["Workflows extras"] = ", ".join(extras) if extras else "nenhum"
 
-              repos_data.append(repo_dict)
+                  repos_data.append(repo_dict)
 
           # Criar DataFrame e gerar CSV/XLSX
           df = pd.DataFrame(repos_data)
