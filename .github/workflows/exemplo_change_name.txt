@@ -1,0 +1,159 @@
+#!/usr/bin/env python3
+import os
+import re
+import subprocess
+import tempfile
+
+# ========================
+# CONFIGURAÇÕES
+# ========================
+
+# Token do GitHub com permissões de leitura/escrita
+GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
+ORG_NAME = "sua-organizacao"
+
+# Repositórios a processar
+repos = [
+    "repo_1",
+    "repo_2",
+    "repo_3",
+    # ... até 100 por vez
+]
+
+# Mapeamento: workflow_call -> nome desejado do arquivo
+CALLER_MAP = {
+    "workflow_call.yaml": "workflow_caller.yaml",
+    "build_call.yaml": "build_pipeline.yaml",
+    "deploy_call.yaml": "deploy_pipeline.yaml",
+    # adicione até uns 15 padrões
+}
+
+# Diretório temporário para clonar os repositórios
+WORKDIR = tempfile.mkdtemp()
+
+
+# ========================
+# FUNÇÕES AUXILIARES
+# ========================
+
+def run_cmd(cmd, cwd=None):
+    """Executa comando shell com captura de erro."""
+    result = subprocess.run(cmd, cwd=cwd, shell=True,
+                            capture_output=True, text=True)
+    if result.returncode != 0:
+        print(f"[ERRO] Comando falhou: {cmd}")
+        print(result.stderr)
+        raise RuntimeError(result.stderr)
+    return result.stdout.strip()
+
+
+def rename_workflows(repo_path):
+    """Renomeia workflows dentro de .github/workflows/ conforme CALLER_MAP"""
+    workflows_dir = os.path.join(repo_path, ".github", "workflows")
+    if not os.path.exists(workflows_dir):
+        print(f"[INFO] Nenhum workflow em {repo_path}")
+        return False
+
+    changed = False
+    for file in os.listdir(workflows_dir):
+        if not file.endswith(".yaml") and not file.endswith(".yml"):
+            continue
+
+        file_path = os.path.join(workflows_dir, file)
+        with open(file_path, "r") as f:
+            content = f.read()
+
+        for caller, new_name in CALLER_MAP.items():
+            if re.search(rf"uses:\s*{ORG_NAME}/.*/{caller}", content):
+                if file != new_name:
+                    new_path = os.path.join(workflows_dir, new_name)
+                    os.rename(file_path, new_path)
+                    print(f"[OK] Renomeado {file} -> {new_name}")
+                    changed = True
+                break
+    return changed
+
+
+def process_branch(repo_name, branch):
+    """Processa uma branch específica de um repositório"""
+    repo_dir = os.path.join(WORKDIR, f"{repo_name}-{branch}")
+    if os.path.exists(repo_dir):
+        run_cmd(f"rm -rf {repo_dir}")
+
+    print(f"\n===== Processando {repo_name} ({branch}) =====")
+    # Clonar a branch
+    run_cmd(f"git clone -b {branch} https://x-access-token:{GITHUB_TOKEN}@github.com/{ORG_NAME}/{repo_name}.git {repo_dir}")
+    
+    # Renomear workflows
+    if not rename_workflows(repo_dir):
+        print(f"[INFO] Nenhuma alteração em {repo_name} ({branch})")
+        return
+
+    # Commit e push
+    run_cmd("git add .", cwd=repo_dir)
+    run_cmd('git commit -m "chore: rename workflow files"', cwd=repo_dir)
+    run_cmd(f"git push origin {branch} --force", cwd=repo_dir)
+    print(f"[OK] Alterações aplicadas diretamente na {branch} de {repo_name}")
+
+
+def branch_exists(repo_name, branch):
+    """Verifica se a branch existe via GitHub API"""
+    from github import Github, GithubException
+    if not GITHUB_TOKEN:
+        raise RuntimeError("Defina a variável de ambiente GITHUB_TOKEN")
+    gh = Github(GITHUB_TOKEN)
+    try:
+        repo = gh.get_repo(f"{ORG_NAME}/{repo_name}")
+        repo.get_branch(branch)
+        return True
+    except GithubException:
+        return False
+
+
+# ========================
+# EXECUÇÃO
+# ========================
+
+if __name__ == "__main__":
+    for repo_name in repos:
+        try:
+            # Processa main
+            if branch_exists(repo_name, "main"):
+                process_branch(repo_name, "main")
+            else:
+                print(f"[INFO] Branch main não existe em {repo_name}, pulando...")
+
+            # Processa develop, se existir
+            if branch_exists(repo_name, "develop"):
+                process_branch(repo_name, "develop")
+            else:
+                print(f"[INFO] Branch develop não existe em {repo_name}, pulando...")
+
+        except Exception as e:
+            print(f"[ERRO] Falhou em {repo_name}: {e}")
+
+
+
+-----------------------------
+
+
+---
+- name: Renomear workflows em repositórios da organização
+  hosts: localhost
+  gather_facts: no
+  vars:
+    github_token: "{{ lookup('env','GITHUB_TOKEN') }}"
+
+  tasks:
+
+    - name: Rodar rename_workflows.py
+      command: python3 tasks/rename_workflows.py
+      environment:
+        GITHUB_TOKEN: "{{ github_token }}"
+      register: rename_result
+      changed_when: "'Alterações aplicadas diretamente' in rename_result.stdout"
+
+    - name: Exibir log do Python
+      debug:
+        var: rename_result.stdout
+
